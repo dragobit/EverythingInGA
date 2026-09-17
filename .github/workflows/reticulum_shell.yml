@@ -42,7 +42,7 @@ jobs:
         run: |
           python3 -m pip install --user rns rnsh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          rnsh --version
+          rnsh --version || true  # rnsh exits 1 even on success
 
       - name: Configure Reticulum (public entry points)
         run: |
