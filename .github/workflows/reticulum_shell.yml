@@ -59,22 +59,19 @@ jobs:
               target_host = sydney.reticulum.au
               target_port = 4242
 
-            [[RNS Testnet BetweenTheBorders]]
-              type = TCPClientInterface
-              enabled = yes
-              target_host = reticulum.betweentheborders.com
-              target_port = 4242
           EOF
 
       - name: Restore persistent rnsh identity (optional secret)
         env:
           RNSH_IDENTITY_B64: ${{ secrets.RNSH_IDENTITY_B64 }}
         run: |
-          ID_DIR="$HOME/.reticulum/storage/identities/rnsh"
-          mkdir -p "$ID_DIR"
+          # rnsh stores the listener identity at
+          # ~/.reticulum/storage/identities/rnsh.default (service "default")
+          ID_FILE="$HOME/.reticulum/storage/identities/rnsh.default"
+          mkdir -p "$(dirname "$ID_FILE")"
           if [ -n "$RNSH_IDENTITY_B64" ]; then
-            echo "$RNSH_IDENTITY_B64" | base64 -d > "$ID_DIR/default"
-            chmod 600 "$ID_DIR/default"
+            echo "$RNSH_IDENTITY_B64" | base64 -d > "$ID_FILE"
+            chmod 600 "$ID_FILE"
             echo "Restored persistent rnsh identity (stable destination hash)."
           else
             echo "No RNSH_IDENTITY_B64 secret — a fresh identity will be generated."
@@ -108,7 +105,7 @@ jobs:
 
       - name: Run rnsh listener
         env:
-          CLIENT_HASH: ${{ github.event.inputs.client_identity_hash }}
+          CLIENT_HASH: ${{ github.event.inputs.client_identity_hash || vars.RNSH_CLIENT_IDENTITY }}
           ALLOW_ANY: ${{ github.event.inputs.allow_any }}
           DURATION_MINUTES: ${{ github.event.inputs.duration_minutes }}
         run: |
