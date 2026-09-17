@@ -1,0 +1,127 @@
+name: Reticulum Shell (rnsh)
+
+# Launches a temporary remote shell on this GitHub Actions runner, reachable
+# over the Reticulum network via public TCP entry points (no inbound ports
+# needed on the runner side).
+#
+# Usage:
+#   1. On your client, run `rnsh -p` and copy your Identity hash.
+#   2. Run this workflow with `client_identity_hash` set to that hash.
+#   3. Watch the job log (or the step summary) for "Listening on : <hash>"
+#      — that is the runner's destination hash.
+#   4. Connect: `rnsh <destination_hash>` (after joining the same public
+#      Reticulum backbone, e.g. the testnet entry points below).
+#
+# Optional: store a base64-encoded RNS identity in the `RNSH_IDENTITY_B64`
+# repo secret to keep the destination hash stable across runs:
+#   base64 -w0 ~/.reticulum/storage/identities/rnsh/default   # adjust path
+
+on:
+  workflow_dispatch:
+    inputs:
+      client_identity_hash:
+        description: 'Client rnsh identity hash allowed to connect (-a). Leave empty only if allow_any is checked.'
+        required: false
+        default: ''
+      allow_any:
+        description: 'Allow ANY client to connect (-n, disables auth). Dangerous — prefer client_identity_hash.'
+        required: false
+        type: boolean
+        default: false
+      duration_minutes:
+        description: 'How long the listener stays up (minutes, max 330)'
+        required: false
+        default: '30'
+
+jobs:
+  shell:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Install rns and rnsh
+        run: |
+          python3 -m pip install --user rns rnsh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          rnsh --version
+
+      - name: Configure Reticulum (public entry points)
+        run: |
+          mkdir -p ~/.reticulum
+          cat > ~/.reticulum/config <<'EOF'
+          [reticulum]
+          enable_transport = False
+          share_instance = Yes
+
+          [interfaces]
+            [[Public Entry Point Sydney]]
+              type = TCPClientInterface
+              enabled = yes
+              target_host = sydney.reticulum.au
+              target_port = 4242
+
+            [[RNS Testnet BetweenTheBorders]]
+              type = TCPClientInterface
+              enabled = yes
+              target_host = reticulum.betweentheborders.com
+              target_port = 4242
+          EOF
+
+      - name: Restore persistent rnsh identity (optional secret)
+        env:
+          RNSH_IDENTITY_B64: ${{ secrets.RNSH_IDENTITY_B64 }}
+        run: |
+          ID_DIR="$HOME/.reticulum/storage/identities/rnsh"
+          mkdir -p "$ID_DIR"
+          if [ -n "$RNSH_IDENTITY_B64" ]; then
+            echo "$RNSH_IDENTITY_B64" | base64 -d > "$ID_DIR/default"
+            chmod 600 "$ID_DIR/default"
+            echo "Restored persistent rnsh identity (stable destination hash)."
+          else
+            echo "No RNSH_IDENTITY_B64 secret — a fresh identity will be generated."
+          fi
+
+      - name: Start rnsd and wait for backbone connectivity
+        run: |
+          rnsd &
+          for i in $(seq 1 30); do
+            sleep 2
+            if rnstatus 2>/dev/null | grep -qiE 'TCPClientInterface|Traffic'; then
+              echo "--- rnstatus ---"; rnstatus; exit 0
+            fi
+          done
+          echo "Timed out waiting for interfaces"; rnstatus || true; exit 1
+
+      - name: Print destination hash
+        id: dest
+        run: |
+          rnsh -l -p | tee rnsh_identity.txt
+          DEST=$(grep 'Listening on' rnsh_identity.txt | awk '{print $NF}' | tr -d '<>')
+          echo "destination=$DEST" >> "$GITHUB_OUTPUT"
+          echo "Destination hash: $DEST"
+          {
+            echo "## Reticulum shell is up"
+            echo ""
+            echo "- Destination hash: \`$DEST\`"
+            echo "- Connect with: \`rnsh $DEST\`"
+            echo "- Listener lifetime: ${{ github.event.inputs.duration_minutes }} minutes"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run rnsh listener
+        env:
+          CLIENT_HASH: ${{ github.event.inputs.client_identity_hash }}
+          ALLOW_ANY: ${{ github.event.inputs.allow_any }}
+          DURATION_MINUTES: ${{ github.event.inputs.duration_minutes }}
+        run: |
+          ARGS=(-l -v -b 300)
+          if [ "$ALLOW_ANY" = "true" ]; then
+            ARGS+=(-n)
+          elif [ -n "$CLIENT_HASH" ]; then
+            ARGS+=(-a "$CLIENT_HASH")
+          else
+            echo "::error::Set client_identity_hash or check allow_any"
+            exit 1
+          fi
+          MINS=$(( DURATION_MINUTES > 330 ? 330 : DURATION_MINUTES ))
+          echo "Starting: timeout ${MINS}m rnsh ${ARGS[*]} -- /bin/bash"
+          timeout "${MINS}m" rnsh "${ARGS[@]}" -- /bin/bash
+          echo "Listener exited (timeout or shutdown)."
