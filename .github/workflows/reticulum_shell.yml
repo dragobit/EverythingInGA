@@ -52,23 +52,18 @@ jobs:
           enable_transport = False
           share_instance = Yes
 
-          [[RNS Testnet Dublin]]
-            type = TCPClientInterface
-            enabled = yes
-            target_host = dublin.connect.reticulum.network
-            target_port = 4965
+          [interfaces]
+            [[Public Entry Point Sydney]]
+              type = TCPClientInterface
+              enabled = yes
+              target_host = sydney.reticulum.au
+              target_port = 4242
 
-          [[RNS Testnet BetweenTheBorders]]
-            type = TCPClientInterface
-            enabled = yes
-            target_host = reticulum.betweentheborders.com
-            target_port = 4242
-
-          [[Public Entry Point Sydney]]
-            type = TCPClientInterface
-            enabled = yes
-            target_host = sydney.reticulum.au
-            target_port = 4242
+            [[RNS Testnet BetweenTheBorders]]
+              type = TCPClientInterface
+              enabled = yes
+              target_host = reticulum.betweentheborders.com
+              target_port = 4242
           EOF
 
       - name: Restore persistent rnsh identity (optional secret)
