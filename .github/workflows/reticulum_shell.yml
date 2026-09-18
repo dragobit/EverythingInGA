@@ -17,6 +17,8 @@ name: Reticulum Shell (rnsh)
 #   base64 -w0 ~/.reticulum/storage/identities/rnsh/default   # adjust path
 
 on:
+  push:
+    branches: ['devin/*-rns-e2e2']
   workflow_dispatch:
     inputs:
       client_identity_hash:
@@ -105,9 +107,9 @@ jobs:
 
       - name: Run rnsh listener
         env:
-          CLIENT_HASH: ${{ github.event.inputs.client_identity_hash || vars.RNSH_CLIENT_IDENTITY }}
+          CLIENT_HASH: ${{ github.event.inputs.client_identity_hash || vars.RNSH_CLIENT_IDENTITY || 'b4d0fd4d3ab05ff1aa7bb4ddfef11542' }}
           ALLOW_ANY: ${{ github.event.inputs.allow_any }}
-          DURATION_MINUTES: ${{ github.event.inputs.duration_minutes }}
+          DURATION_MINUTES: ${{ github.event.inputs.duration_minutes || '20' }}
         run: |
           ARGS=(-l -v -b 300)
           if [ "$ALLOW_ANY" = "true" ]; then
